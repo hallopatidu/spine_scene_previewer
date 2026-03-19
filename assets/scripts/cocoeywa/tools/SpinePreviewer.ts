@@ -1,5 +1,5 @@
 
-import { __private, _decorator, Animation, AnimationClip, assetManager, Component, director, error, log, Node, sp, TweenSystem, warn } from 'cc';
+import { __private, _decorator, Animation, AnimationClip, assetManager, CCClass, Component, director, error, log, Node, sp, TweenSystem, warn } from 'cc';
 import { EDITOR } from 'cc/env';
 import { AssetInfo } from '../../@cocos/creator-types/editor/packages/asset-db/@types/public';
 const { ccclass, property, executeInEditMode } = _decorator;
@@ -42,16 +42,17 @@ const DefaultAnimationClipData = {
 
 
 /**
- * SpinePreviewer Component xem trước và xem trực tiếp chuyển động của spine trên Scene.
- * Cơ chế là chuyển Editor sang Animation Mode để chạy Animation.
- * Quá trình này yêu cầu hệ thống tự động tạo thêm một file .anim giả cùng tên đứng cạnh file spine để chạy.
- * Các phiên bản sau này sẽ sử dụng file này để điều khiển và update việc điều khiển spine.
+ * SpinePreviewer Component 
+ *  ** Cho phép xem trực tiếp chuyển động của spine trên Scene.
+ *  ** Cơ chế là chuyển Editor sang Animation Mode để chạy Animation.
+ *  ** Quá trình này yêu cầu hệ thống tự động tạo thêm một file .anim giả cùng tên đứng cạnh file spine để chạy.
+ *  ** Các phiên bản sau này sẽ sử dụng file .anim này để điều khiển và update việc điều khiển spine.
  * 
  * SpinePreviewer Component
- *** Provides live Spine animation previews in the Scene.
- *** Mechanism: Switches the Editor to Animation Mode to run animations.
- *** Requirement: Automatically creates a dummy .anim file alongside the Spine asset.
- *** Roadmap: This file will be used for controlling and updating Spine behaviors in subsequent versions.
+ *  ** Provides live Spine animation previews in the Scene.
+ *  ** Mechanism: Switches the Editor to Animation Mode to run animations.
+ *  ** Requirement: Automatically creates a dummy .anim file alongside the Spine asset.
+ *  ** Roadmap: This file will be used for controlling and updating Spine behaviors in subsequent versions.
  */
 @ccclass('SpinePreviewer')
 @executeInEditMode(true)
@@ -82,7 +83,7 @@ export class SpinePreviewer extends Animation {
                 const skeletonData: sp.SkeletonData = value.skeletonData;
                 const uuid: string = skeletonData.uuid;
                 this.referenceAnimationAsset(uuid);
-
+                
             } else if (value && !value.skeletonData) {
                 error('Reference to Spine Component fail. You need SkeletonData Asset for this Spine Component !')
             } else {
@@ -93,6 +94,28 @@ export class SpinePreviewer extends Animation {
             }
         }
     }
+
+    @property({
+        slide: true,        
+        range: [0, 100],
+        visible() {
+            return !this.playInEditor;
+        }
+    })    
+    public get seekTime(): number {
+        return this._seekTime;
+    }
+    public set seekTime(value: number) {
+        this._seekTime = value;
+        this.seekTo(value);
+    }
+
+    @property({
+        readonly:true
+    })
+    duration:number = 0
+
+    // ---------- Hide Animation Component's properties in Editor ------------- 
 
     @property({
         type: AnimationClip,
@@ -161,11 +184,14 @@ export class SpinePreviewer extends Animation {
         return this._previewUUID
     }
 
-    private _isRunning: boolean = false;
-
     private get isInPreviewFocus():boolean{
         return SpinePreviewer.__runningPreviewerUuid == this.previewUUID
     }
+
+    private _isRunning: boolean = false;
+    private _previewTrackIndex: number = 0;
+    private _seekTime: number = 0;
+    private _spineAnimation:string = undefined;
     
     onLoad(): void {
         if(!EDITOR){
@@ -179,10 +205,12 @@ export class SpinePreviewer extends Animation {
 
     update(deltaTime: number) {
         if (this.playInEditor && this.isInPreviewFocus) {
-            this.updateSpineAnimation(deltaTime);            
+            this.updateSpineAnimation(deltaTime);
             // Nếu muốn tween chạy trên scene thì mở đoạn sau. Lưu ý: các component class sử dụng tween cần có @executeInEditMode(true)
             // TweenSystem.instance.ActionManager.update(deltaTime);    
             Editor.Message.request('scene', 'set-edit-time', deltaTime);            
+        }else if(this.hasChanged()){
+            this.updateSpineInfo(this.spine);
         }
     }
 
@@ -190,7 +218,7 @@ export class SpinePreviewer extends Animation {
      * Update skeleton animation.
      * @param dt delta time.
      */
-    private updateSpineAnimation(dt: number): void {
+    protected updateSpineAnimation(dt: number): void {
         if (!this.spine) return;
         const spine: RedefinedSkeletonType = this.spine as RedefinedSkeletonType;
         spine.markForUpdateRenderData();
@@ -223,6 +251,35 @@ export class SpinePreviewer extends Animation {
         } else {
             spine._instance! && spine._instance!.updateAnimation(dt);
         }
+    }
+
+    // ------------- Private ------------
+
+    /**
+     * 
+     * @param spine 
+     */
+    private updateSpineInfo(spine:sp.Skeleton){
+        if (spine && spine.skeletonData) {       
+            this._spineAnimation = this.spine ? this.spine.animation : undefined;     
+            const animation:sp.spine.Animation =  spine.findAnimation(this._spineAnimation)
+            if(animation){
+                const duration:number = animation.duration;
+                CCClass.Attr.setClassAttr(this, 'seekTime', 'range', [0, duration]);
+                CCClass.Attr.setClassAttr(this, 'seekTime', 'min', 0);
+                CCClass.Attr.setClassAttr(this, 'seekTime', 'max', duration);
+                CCClass.Attr.setClassAttr(this, 'seekTime', 'step', duration/1000); 
+                this.duration = duration;           
+            }
+        }
+    }
+
+    /**
+     * 
+     * @returns 
+     */
+    private hasChanged():boolean{
+        return this._spineAnimation !== this.spine?.animation
     }
 
     /**
@@ -331,7 +388,6 @@ export class SpinePreviewer extends Animation {
         }
     }
 
-
     private async stopAnimation(){
         if (EDITOR) {
             const checkMode: string = Editor.EditMode.getMode();                
@@ -347,6 +403,12 @@ export class SpinePreviewer extends Animation {
         }
     }
     
+    private seekTo(time:number){
+        if(EDITOR){            
+            this._previewTrackIndex = this.spine.setAnimation(this._previewTrackIndex, this.spine.animation, this.spine.loop).trackIndex;
+            this.updateSpineAnimation(time);
+        }
+    }
 
     // --------- Utils -----------
 
