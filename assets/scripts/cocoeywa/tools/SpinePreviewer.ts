@@ -22,24 +22,7 @@ const EditorMode = {
     General:'general'
 }
 
-const DefaultAnimationClipData = {
-    __type__: "cc.AnimationClip",
-    _name: "",
-    _objFlags: 0,
-    _native: "",
-    sample: 60,
-    speed: 1,
-    wrapMode: 1,
-    events: [],
-    _duration: 50,
-    _keys: [],
-    _stepness: 0,
-    curveDatas: {},
-    _curves: [],
-    _commonTargets: [],
-    _hash: 0
-}
-
+const DefaulAnimTemplate = "db://internal/default_file_content/animation-clip/default.anim";
 
 /**
  * SpinePreviewer Component 
@@ -152,10 +135,7 @@ export class SpinePreviewer extends Animation {
     })
     public get playInEditor(): boolean {
         if (EDITOR) {
-            const currentMode: string = Editor.EditMode.getMode();
-            if (currentMode == EditorMode.Animation) {
-                this._isRunning = true
-            }
+            this._isRunning = SpinePreviewer.isInAnimationMode;
         }
         return this._isRunning;
     }
@@ -164,13 +144,15 @@ export class SpinePreviewer extends Animation {
         if (EDITOR) {
             if (value) {
                 this.playAnimation();
+                this._isRunning = value;
             } else if (!value && this.isInPreviewFocus) {
                 this.stopAnimation();
             } else {
                 return;
             }
+        }else{
+            this._isRunning = value;
         }
-        this._isRunning = value;
     }
 
     @property({serializable:true})
@@ -185,7 +167,7 @@ export class SpinePreviewer extends Animation {
     }
 
     private get isInPreviewFocus():boolean{
-        return SpinePreviewer.__runningPreviewerUuid == this.previewUUID
+        return SpinePreviewer.__runningPreviewerUuid == this.previewUUID && SpinePreviewer.isInAnimationMode;
     }
 
     private _isRunning: boolean = false;
@@ -344,9 +326,14 @@ export class SpinePreviewer extends Animation {
             // 2. Tạo asset mới nếu chưa tồn tại 
             // (Create a new .anim asset if it doesn't already exist.)
             if (!assetInfo) {
-                const defaultData = JSON.stringify(DefaultAnimationClipData);
-                assetInfo = await Editor.Message.request('asset-db', 'create-asset', animAssetUrl, defaultData);
-                
+                assetInfo = await Editor.Message.request('asset-db', 'new-asset', {  
+                    handler: "animation-clip",
+                    target: animAssetUrl,
+                    template: DefaulAnimTemplate,
+                    overwrite: true
+                });
+                // const defaultData = JSON.stringify(DefaultAnimationClipData);
+                // assetInfo = await Editor.Message.request('asset-db', 'create-asset', animAssetUrl, defaultData);                
                 if (assetInfo) {
                     await Editor.Message.request('asset-db', 'refresh-asset', assetInfo.uuid);
                     isNewAsset = true;
