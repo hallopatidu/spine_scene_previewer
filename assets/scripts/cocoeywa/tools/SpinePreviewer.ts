@@ -46,6 +46,12 @@ const DefaultAnimationClipData = {
  * Cơ chế là chuyển Editor sang Animation Mode để chạy Animation.
  * Quá trình này yêu cầu hệ thống tự động tạo thêm một file .anim giả cùng tên đứng cạnh file spine để chạy.
  * Các phiên bản sau này sẽ sử dụng file này để điều khiển và update việc điều khiển spine.
+ * 
+ * SpinePreviewer Component
+ *** Provides live Spine animation previews in the Scene.
+ *** Mechanism: Switches the Editor to Animation Mode to run animations.
+ *** Requirement: Automatically creates a dummy .anim file alongside the Spine asset.
+ *** Roadmap: This file will be used for controlling and updating Spine behaviors in subsequent versions.
  */
 @ccclass('SpinePreviewer')
 @executeInEditMode(true)
@@ -135,19 +141,8 @@ export class SpinePreviewer extends Animation {
         if (EDITOR) {
             if (value) {
                 this.playAnimation();
-            } else if (!value && SpinePreviewer.__runningPreviewerUuid == this.uuid) {
-
-                const checkMode: string = Editor.EditMode.getMode();
-                // this.spineState && this.spineState.cancel();
-                if (checkMode == EditorMode.Animation) {
-                    // 
-                    const currentClip: AnimationClip = this.clips[0];
-                    if (currentClip) {
-                        Editor.Message.request('scene', 'change-clip-state', 'stop', currentClip.uuid);
-                    }
-                    Editor.Message.request('scene', "close-scene")
-                    SpinePreviewer.__runningPreviewerUuid = null;
-                }
+            } else if (!value && this.isInPreviewFocus) {
+                this.stopAnimation();
             } else {
                 return;
             }
@@ -157,10 +152,25 @@ export class SpinePreviewer extends Animation {
 
     @property({serializable:true})
     private _spine: sp.Skeleton = null;
+
+    private _previewUUID:string = null;
+    private get previewUUID():string{
+        if(!this._previewUUID){
+            this._previewUUID = `${this.node?.uuid}::${this.uuid}`
+        }
+        return this._previewUUID
+    }
+
     private _isRunning: boolean = false;
 
-
+    private get isInPreviewFocus():boolean{
+        return SpinePreviewer.__runningPreviewerUuid == this.previewUUID
+    }
+    
     onLoad(): void {
+        if(!EDITOR){
+            this.destroy();
+        }
         super.onLoad();
         if(!this.spine){
             this.spine = this.getComponent(sp.Skeleton);
@@ -168,9 +178,10 @@ export class SpinePreviewer extends Animation {
     }
 
     update(deltaTime: number) {
-        if (this.playInEditor && SpinePreviewer.__runningPreviewerUuid == this.uuid) {
+        if (this.playInEditor && this.isInPreviewFocus) {
             this.updateSpineAnimation(deltaTime);            
-            TweenSystem.instance.ActionManager.update(deltaTime);
+            // Nếu muốn tween chạy trên scene thì mở đoạn sau. Lưu ý: các component class sử dụng tween cần có @executeInEditMode(true)
+            // TweenSystem.instance.ActionManager.update(deltaTime);    
             Editor.Message.request('scene', 'set-edit-time', deltaTime);            
         }
     }
@@ -179,7 +190,7 @@ export class SpinePreviewer extends Animation {
      * Update skeleton animation.
      * @param dt delta time.
      */
-    public updateSpineAnimation(dt: number): void {
+    private updateSpineAnimation(dt: number): void {
         if (!this.spine) return;
         const spine: RedefinedSkeletonType = this.spine as RedefinedSkeletonType;
         spine.markForUpdateRenderData();
@@ -245,14 +256,21 @@ export class SpinePreviewer extends Animation {
 
     
     /**
-     * Tự động tham chiếu hoặc tạo mới Animation Clip dựa trên UUID của tài nguyên mục tiêu.
-     * @param targetAssetUuid UUID của tài nguyên gốc để xác định đường dẫn.
+     * Tự động tham chiếu hoặc tạo mới Animation Clip dựa trên UUID của tài nguyên mục tiêu.\
+     * (Automatically references or creates a new Animation Clip based on the target asset's UUID.)
+     * * Process:
+     * 1. Retrieve the file path using the source UUID.
+     * 2. Create a new .anim asset if it doesn't already exist.
+     * 3. Load and assign the Animation Clip to the component.
+     * 4. Perform a soft-reload of the Editor if a new asset was generated.
+     * @param targetAssetUuid UUID của tài nguyên gốc để xác định đường dẫn. (The UUID of the source asset to determine the path.)
      */
     private async referenceAnimationAsset(targetAssetUuid: string): Promise<void> {
         if (!EDITOR) return;
 
         try {
-            // 1. Lấy thông tin đường dẫn từ UUID
+            // 1. Lấy thông tin đường dẫn từ UUID 
+            // (Retrieve the file path using the source UUID.)
             const url: string = await Editor.Message.request('asset-db', "query-url", targetAssetUuid);
             if (!url) {
                 warn(`[ReferenceAnim] Không tìm thấy URL cho UUID: ${targetAssetUuid}`);
@@ -266,7 +284,8 @@ export class SpinePreviewer extends Animation {
             let isNewAsset: boolean = false;
             let assetInfo: AssetInfo = await Editor.Message.request('asset-db', 'query-asset-info', animAssetUrl);
 
-            // 2. Tạo asset mới nếu chưa tồn tại
+            // 2. Tạo asset mới nếu chưa tồn tại 
+            // (Create a new .anim asset if it doesn't already exist.)
             if (!assetInfo) {
                 const defaultData = JSON.stringify(DefaultAnimationClipData);
                 assetInfo = await Editor.Message.request('asset-db', 'create-asset', animAssetUrl, defaultData);
@@ -276,26 +295,28 @@ export class SpinePreviewer extends Animation {
                     isNewAsset = true;
                     // log(`[ReferenceAnim] Đã tạo mới Animation Clip: ${animAssetUrl}`);
                 } else {
-                    throw new Error(`Không thể tạo asset tại: ${animAssetUrl}`);
+                    throw new Error(`Failed to create asset at: ${animAssetUrl}`);
                 }
             }
 
-            // 3. Load và gán Animation Clip
+            // 3. Load và gán Animation Clip 
+            // (Load and assign the Animation Clip to the component.)
             const animationClip: AnimationClip = await this.loadAnimationClipByUuid(assetInfo.uuid);
             if (animationClip) {
                 // Thêm clip vào animation.
                 this.addClip(animationClip, assetInfo.name);
                 this.defaultClip = animationClip;
 
-                // 4. Nếu file .anim vừa được tạo thì reload nhẹ cái Cocos Creator Editor.
+                // 4. Nếu file .anim vừa được tạo thì reload nhẹ cái Cocos Creator Editor. 
+                // (Perform a soft-reload of the Editor if a new asset was generated.)
                 if (isNewAsset) {
                     await Editor.Message.request('scene', 'soft-reload');
                 }                
-                // log(`[ReferenceAnim] Đã gán thành công clip: ${assetInfo.name}`);
+                
             }
 
         } catch (error) {
-            error("[ReferenceAnim] Lỗi trong quá trình tham chiếu Animation Asset:", error);
+            error("[SpinePreviewer] Error during Animation Asset referencing:", error);
         }
     }
 
@@ -304,13 +325,30 @@ export class SpinePreviewer extends Animation {
         if (EDITOR) {
             const currentClip: AnimationClip = this.clips[0];
             const selectedNodeUuid: string = this.node.uuid
-            SpinePreviewer.__runningPreviewerUuid = this.uuid;
+            SpinePreviewer.__runningPreviewerUuid = this.previewUUID;
             await Editor.Message.request('scene', 'record-animation', selectedNodeUuid, true, currentClip.uuid);            
             await Editor.Message.request('scene', 'query-node', selectedNodeUuid);
         }
     }
 
-    // --------- Support -----------
+
+    private async stopAnimation(){
+        if (EDITOR) {
+            const checkMode: string = Editor.EditMode.getMode();                
+            if (checkMode == EditorMode.Animation) {
+                // 
+                const currentClip: AnimationClip = this.clips[0];
+                if (currentClip) {
+                    Editor.Message.request('scene', 'change-clip-state', 'stop', currentClip.uuid);
+                }
+                Editor.Message.request('scene', "close-scene")
+                SpinePreviewer.__runningPreviewerUuid = null;
+            }
+        }
+    }
+    
+
+    // --------- Utils -----------
 
     private getPathWithoutFileName(fullUrl: string): string | null {
         const match = fullUrl.match(/^([a-zA-Z]+:\/\/.+\/)[^\/]+\.[^\/]+$/);
