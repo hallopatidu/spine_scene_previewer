@@ -1,4 +1,4 @@
-# Spine Animation Previewer
+# Spine Animation Scene Previewer
 ![Logo](./settings/logo-diy.png)
 
 A single component designed to preview Spine Animations directly within the Editor environment without the need for Runtime execution.
