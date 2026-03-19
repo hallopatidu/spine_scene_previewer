@@ -21,7 +21,7 @@ To use this component, simply follow these steps:
 
 Use the horizontal slider to seek to a specific frame.
 
-![Playback](./settings/seeking.gif)
+![Seeking](./settings/seeking.gif)
 
 ---
 
