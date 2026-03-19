@@ -1,8 +1,8 @@
-import { __private, _decorator, AnimationClip, assetManager, Component, director, error, log, Node, sp, TweenSystem } from 'cc';
+
+import { __private, _decorator, Animation, AnimationClip, assetManager, Component, director, error, log, Node, sp, TweenSystem, warn } from 'cc';
 import { EDITOR } from 'cc/env';
 import { AssetInfo } from '../../@cocos/creator-types/editor/packages/asset-db/@types/public';
-const { ccclass, property , executeInEditMode, requireComponent, disallowMultiple} = _decorator;
-
+const { ccclass, property, executeInEditMode } = _decorator;
 type RedefinedSkeletonType = sp.Skeleton & {
     _cacheMode:typeof sp.Skeleton.AnimationCacheMode,
     _curFrame:__private._cocos_spine_skeleton_cache__AnimationFrame,
@@ -40,13 +40,20 @@ const DefaultAnimationClipData = {
     _hash: 0
 }
 
+
+/**
+ * SpinePreviewer Component xem trước và xem trực tiếp chuyển động của spine trên Scene.
+ * Cơ chế là chuyển Editor sang Animation Mode để chạy Animation.
+ * Quá trình này yêu cầu hệ thống tự động tạo thêm một file .anim giả cùng tên đứng cạnh file spine để chạy.
+ * Các phiên bản sau này sẽ sử dụng file này để điều khiển và update việc điều khiển spine.
+ */
 @ccclass('SpinePreviewer')
-@disallowMultiple(true)
-@requireComponent(sp.Skeleton)
 @executeInEditMode(true)
-export class SpinePreviewer extends Component {
+export class SpinePreviewer extends Animation {
+
     private static __runningPreviewerUuid: string = null
-    private static get isAnimationMode(): boolean {
+
+    private static get isInAnimationMode(): boolean {
         if (EDITOR) {
             const currentMode: string = Editor.EditMode.getMode();
             return currentMode == EditorMode.Animation;
@@ -54,24 +61,29 @@ export class SpinePreviewer extends Component {
         return false;
     }
 
-    @property({ type: sp.Skeleton })
+    @property({ 
+        type: sp.Skeleton,
+        visible:false,        
+    })
     public get spine(): sp.Skeleton {
         return this._spine;
     }
     public set spine(value: sp.Skeleton) {
         if (this._spine === value) return;
         this._spine = value;
-        if(value){
-            if (!SpinePreviewer.isAnimationMode) {
-                if (value && value.skeletonData) {
-                    const skeletonData: sp.SkeletonData = value.skeletonData;
-                    const uuid: string = skeletonData.uuid;
-                    this.referenceAnimationAsset(uuid);
-                } else if (value && !value.skeletonData) {
-                    error('Reference to Spine Component fail. You need SkeletonData Asset for this Spine Component !')
-                } else {
-                    this.defaultClip = null;
-                }
+        if (!SpinePreviewer.isInAnimationMode) {
+            if (value && value.skeletonData) {                
+                const skeletonData: sp.SkeletonData = value.skeletonData;
+                const uuid: string = skeletonData.uuid;
+                this.referenceAnimationAsset(uuid);
+
+            } else if (value && !value.skeletonData) {
+                error('Reference to Spine Component fail. You need SkeletonData Asset for this Spine Component !')
+            } else {
+                this.clips.forEach((clip: AnimationClip) => {
+                    this.removeClip(clip, true);
+                })
+                this.defaultClip = null;
             }
         }
     }
@@ -88,6 +100,22 @@ export class SpinePreviewer extends Component {
         this._defaultClip = value;
     }
 
+    @property({override:true, visible:false})
+    public playOnLoad: boolean;
+
+    @property({ 
+        type:[AnimationClip],
+        override:true,
+        visible:false
+    })
+    get clips (): (AnimationClip | null)[] {
+        return super.clips;
+    }
+
+    set clips (value:(AnimationClip | null)[]) {        
+        super.clips = value;
+    }
+
     @property({
         visible() {
             return this._spine;
@@ -95,160 +123,55 @@ export class SpinePreviewer extends Component {
     })
     public get playInEditor(): boolean {
         if (EDITOR) {
-            const currentMode:string = Editor.EditMode.getMode()
-            this._playInEditor = (currentMode == EditorMode.Animation ) && this.curentAnimationIsARunningAnimation
+            const currentMode: string = Editor.EditMode.getMode();
+            if (currentMode == EditorMode.Animation) {
+                this._isRunning = true
+            }
         }
-        return this._playInEditor;
+        return this._isRunning;
     }
 
     public set playInEditor(value: boolean) {
         if (EDITOR) {
             if (value) {
                 this.playAnimation();
-            } else if (!value && this.curentAnimationIsARunningAnimation) {
-                this.stopAnimation();
+            } else if (!value && SpinePreviewer.__runningPreviewerUuid == this.uuid) {
+
+                const checkMode: string = Editor.EditMode.getMode();
+                // this.spineState && this.spineState.cancel();
+                if (checkMode == EditorMode.Animation) {
+                    // 
+                    const currentClip: AnimationClip = this.clips[0];
+                    if (currentClip) {
+                        Editor.Message.request('scene', 'change-clip-state', 'stop', currentClip.uuid);
+                    }
+                    Editor.Message.request('scene', "close-scene")
+                    SpinePreviewer.__runningPreviewerUuid = null;
+                }
+            } else {
+                return;
             }
-            this._playInEditor = value;
-        }    
+        }
+        this._isRunning = value;
     }
 
-    private get curentAnimationIsARunningAnimation():boolean{
-        return this.defaultClip ? SpinePreviewer.__runningPreviewerUuid == this.defaultClip.uuid : false
-    }
-
-    // ---------    
+    @property({serializable:true})
     private _spine: sp.Skeleton = null;
-    private _playInEditor: boolean = false;
+    private _isRunning: boolean = false;
 
-    @property({serializable:true, visible:true})
-    protected _defaultClip: AnimationClip | null;
-    
-    
-    // --------
 
-    protected onLoad(): void {
+    onLoad(): void {
+        super.onLoad();
         if(!this.spine){
             this.spine = this.getComponent(sp.Skeleton);
         }
     }
 
     update(deltaTime: number) {
-        if (this.playInEditor) {
-            this.updateSpineAnimation(deltaTime);
-            // // SkeletonSystem
-            // director.getSystem('SKELETON').postUpdate(deltaTime)
+        if (this.playInEditor && SpinePreviewer.__runningPreviewerUuid == this.uuid) {
+            this.updateSpineAnimation(deltaTime);            
             TweenSystem.instance.ActionManager.update(deltaTime);
-            Editor.Message.request('scene', 'set-edit-time', deltaTime)
-        }
-    }
-
-    // ------------ Feature Function ----------------
-
-    protected async playAnimation():Promise<void> {
-        if (EDITOR) {
-            if(SpinePreviewer.__runningPreviewerUuid){
-                await this.stopAnimation();
-            }
-            const currentClip: AnimationClip = this.defaultClip;
-            if(!currentClip) return
-            const clipUUID:string = currentClip.uuid;
-            const selectedNodeUuid: string = this.node.uuid
-            SpinePreviewer.__runningPreviewerUuid = clipUUID //this.uuid;
-            await Editor.Message.request('scene', 'record-animation', selectedNodeUuid, true, clipUUID);            
-            await Editor.Message.request('scene', 'query-node', selectedNodeUuid);
-        }
-    }
-
-    protected async stopAnimation():Promise<void> {
-        if(EDITOR){            
-            const checkMode: string = Editor.EditMode.getMode();
-            if (checkMode == EditorMode.Animation) {
-                const clipUUID:string = SpinePreviewer.__runningPreviewerUuid;
-                if(clipUUID){
-                    await Editor.Message.request('scene', 'change-clip-state', 'stop', clipUUID);
-                }
-                await Editor.Message.request('scene', "close-scene");
-                SpinePreviewer.__runningPreviewerUuid = null;
-                // 
-                // const currentClip: AnimationClip = this.defaultClip;
-                // if (currentClip) {
-                //     await Editor.Message.request('scene', 'change-clip-state', 'stop', currentClip.uuid);
-                // }
-                // await Editor.Message.request('scene', "close-scene")
-                // SpinePreviewer.__runningPreviewerUuid = null;
-            }
-        }
-    }
-
-    /**
-     * Loads an animation clip asset by its UUID.
-     * This method asynchronously retrieves an animation clip from the asset manager using the provided UUID.
-     * 
-     * @param uuid - The UUID of the animation clip asset to load
-     * @returns A promise that resolves with the loaded AnimationClip if successful, or null if the load operation fails
-     * @remarks
-     * - If an error occurs during asset loading, it will be logged to the console and null will be returned
-     * - This method uses the asset manager's loadAny function to load the asset as an AnimationClip type
-     * 
-     * @example
-     * ```typescript
-     * const clip = await this.loadAnimationClipByUuid('some-uuid-string');
-     * if (clip) {
-     *   // Use the animation clip
-     * }
-     * ```
-     */
-    private async loadAnimationClipByUuid(uuid: string): Promise<AnimationClip | null> {
-        return new Promise<AnimationClip | null>((resolve, reject) => {
-            assetManager.loadAny({ uuid: uuid }, (err, asset) => {
-                if (err) {
-                    console.error('Failed to load asset:', err);
-                    resolve(null);
-                    return;
-                }
-                resolve(asset as AnimationClip);
-            });
-        })
-    }
-
-    /**
-     * References an animation asset and creates it if it doesn't exist.
-     * This method queries the asset database for an animation file corresponding to the target asset,
-     * creates a new animation asset if it doesn't exist, loads the animation clip, and adds it to the previewer.
-     * After creating a new asset, it triggers a soft reload of the scene.
-     * 
-     * @param targetAssetUuid - The UUID of the target asset to reference the animation from
-     * @returns A promise that resolves when the animation asset has been referenced and loaded
-     * @throws May reject if the asset database operations fail
-     * 
-     * @remarks
-     * - This method only executes in the editor environment (EDITOR context)
-     * - If the animation asset already exists, it will be loaded and added to the previewer
-     * - If the animation asset doesn't exist, it will be created with default animation clip data
-     * - After asset creation, a scene soft-reload is triggered to reflect changes
-     * - The animation clip is set as the default clip for the previewer
-     */
-    private async referenceAnimationAsset(targetAssetUuid: string): Promise<void> {
-        if (EDITOR) {
-            const uuid: string = targetAssetUuid
-            const url: string = await Editor.Message.request('asset-db', "query-url", uuid);
-            const relativePath: string = this.getPathWithoutFileName(url);
-            const animAssetName: string = this.getFilenameWithoutExtension(url);
-            const animAssetUrl: string = relativePath + animAssetName + '.anim';
-            // 
-            let isNewAsset: boolean = false;
-            let assetInfo: AssetInfo = await Editor.Message.request('asset-db', 'query-asset-info', animAssetUrl);
-            if (!assetInfo) {
-                assetInfo = await Editor.Message.request('asset-db', 'create-asset', animAssetUrl, JSON.stringify(DefaultAnimationClipData));
-                await Editor.Message.request('asset-db', 'refresh-asset', assetInfo.uuid);
-                isNewAsset = true;
-            }
-            // 
-            const animationClip: AnimationClip = await this.loadAnimationClipByUuid(assetInfo.uuid);
-            if (animationClip) {
-                this.defaultClip = animationClip;
-                isNewAsset && await Editor.Message.request('scene', 'soft-reload');
-            }
+            Editor.Message.request('scene', 'set-edit-time', deltaTime);            
         }
     }
 
@@ -288,6 +211,102 @@ export class SpinePreviewer extends Component {
             spine._updateCache(dt);
         } else {
             spine._instance! && spine._instance!.updateAnimation(dt);
+        }
+    }
+
+    /**
+     * 
+     * @param uuid 
+     * @returns 
+     */
+    private async loadAnimationClipByUuid(uuid: string): Promise<AnimationClip | null> {        
+        try {
+            return await new Promise<AnimationClip | null>((resolve) => {
+                assetManager.loadAny({ uuid }, (err, asset) => {
+                    if (err) {
+                        error(`[LoadAnim] Lỗi tải asset (UUID: ${uuid}):`, err);
+                        return resolve(null);
+                    }
+                    
+                    // Kiểm tra xem asset có thực sự là AnimationClip không
+                    if (!(asset instanceof AnimationClip)) {
+                        warn(`[LoadAnim] Asset có (UUID: ${uuid}) không phải là AnimationClip.`);
+                        return resolve(null);
+                    }
+
+                    resolve(asset);
+                });
+            });
+        } catch (e) {
+            error(`[LoadAnim] Lỗi hệ thống khi load UUID: ${uuid}`, e);
+            return null;
+        }
+    }
+
+    
+    /**
+     * Tự động tham chiếu hoặc tạo mới Animation Clip dựa trên UUID của tài nguyên mục tiêu.
+     * @param targetAssetUuid UUID của tài nguyên gốc để xác định đường dẫn.
+     */
+    private async referenceAnimationAsset(targetAssetUuid: string): Promise<void> {
+        if (!EDITOR) return;
+
+        try {
+            // 1. Lấy thông tin đường dẫn từ UUID
+            const url: string = await Editor.Message.request('asset-db', "query-url", targetAssetUuid);
+            if (!url) {
+                warn(`[ReferenceAnim] Không tìm thấy URL cho UUID: ${targetAssetUuid}`);
+                return;
+            }
+
+            const relativePath: string = this.getPathWithoutFileName(url);
+            const animAssetName: string = this.getFilenameWithoutExtension(url);
+            const animAssetUrl: string = `${relativePath}${animAssetName}.anim`;
+
+            let isNewAsset: boolean = false;
+            let assetInfo: AssetInfo = await Editor.Message.request('asset-db', 'query-asset-info', animAssetUrl);
+
+            // 2. Tạo asset mới nếu chưa tồn tại
+            if (!assetInfo) {
+                const defaultData = JSON.stringify(DefaultAnimationClipData);
+                assetInfo = await Editor.Message.request('asset-db', 'create-asset', animAssetUrl, defaultData);
+                
+                if (assetInfo) {
+                    await Editor.Message.request('asset-db', 'refresh-asset', assetInfo.uuid);
+                    isNewAsset = true;
+                    // log(`[ReferenceAnim] Đã tạo mới Animation Clip: ${animAssetUrl}`);
+                } else {
+                    throw new Error(`Không thể tạo asset tại: ${animAssetUrl}`);
+                }
+            }
+
+            // 3. Load và gán Animation Clip
+            const animationClip: AnimationClip = await this.loadAnimationClipByUuid(assetInfo.uuid);
+            if (animationClip) {
+                // Thêm clip vào animation.
+                this.addClip(animationClip, assetInfo.name);
+                this.defaultClip = animationClip;
+
+                // 4. Nếu file .anim vừa được tạo thì reload nhẹ cái Cocos Creator Editor.
+                if (isNewAsset) {
+                    await Editor.Message.request('scene', 'soft-reload');
+                }                
+                // log(`[ReferenceAnim] Đã gán thành công clip: ${assetInfo.name}`);
+            }
+
+        } catch (error) {
+            error("[ReferenceAnim] Lỗi trong quá trình tham chiếu Animation Asset:", error);
+        }
+    }
+
+
+    private async playAnimation() {
+        if (EDITOR) {
+            const currentClip: AnimationClip = this.clips[0];
+            const selectedNodeUuid: string = this.node.uuid
+            SpinePreviewer.__runningPreviewerUuid = this.uuid;
+            await Editor.Message.request('scene', 'record-animation', selectedNodeUuid, true, currentClip.uuid);            
+            await Editor.Message.request('scene', 'query-node', selectedNodeUuid);
         }
     }
 
