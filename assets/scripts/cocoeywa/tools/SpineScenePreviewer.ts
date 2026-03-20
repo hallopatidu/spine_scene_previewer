@@ -1,4 +1,4 @@
-import { __private, _decorator, Animation, AnimationClip, assetManager, Component, error, Node, sp, warn } from 'cc';
+import { __private, _decorator, Animation, AnimationClip, assetManager, Component, error, log, Node, sp, warn } from 'cc';
 import { EDITOR } from 'cc/env';
 import { AssetInfo } from '../../@cocos/creator-types/editor/packages/asset-db/@types/public';
 const { ccclass, property, executeInEditMode } = _decorator;
@@ -73,8 +73,15 @@ export class SpineScenePreviewer extends Animation {
     public get spine(): sp.Skeleton {
         return this._spine;
     }
-    public set spine(value: sp.Skeleton) {        
-        this._spine = value;
+    public set spine(value: sp.Skeleton) {
+        this._spine = value;        
+        if(EDITOR){
+            const skeletonData: sp.SkeletonData = this._spine?.skeletonData;
+            if(skeletonData){
+                const uuid: string = skeletonData.uuid;
+                this.referenceAnimationAsset(uuid);
+            }
+        }
     }
 
     @property({
@@ -111,7 +118,8 @@ export class SpineScenePreviewer extends Animation {
     }
 
     update(deltaTime: number) {
-        
+        log('hellllllllll')
+        Editor.Message.request('scene', 'set-edit-time', deltaTime);
     }
 
     // --------------------
@@ -207,11 +215,20 @@ export class SpineScenePreviewer extends Animation {
      * 
      * @param time 
      */
-    private seekTo(time:number){
+    private async seekTo(time:number){
         if(EDITOR){                        
             this._previewTrackIndex = this.spine.setAnimation(this._previewTrackIndex, this.spine.animation, this.spine.loop).trackIndex;
             this.updateSpineAnimation(time);
-            Editor.Message.request('scene', 'set-edit-time', time);     
+            // const selectedNodeUuid: string = this.node.uuid;
+            
+            // if(this.defaultClip){
+            //     const clipUUID:string = this.defaultClip.uuid
+            //     await Editor.Message.request('scene', 'record-animation', selectedNodeUuid, true, clipUUID);            
+            //     await Editor.Message.request('scene', 'query-node', selectedNodeUuid);
+            //     await Editor.Message.request('scene', 'set-edit-time', time);
+            //     await Editor.Message.request('scene', 'change-clip-state', 'stop', clipUUID);
+            //     await Editor.Message.request('scene', "close-scene")
+            // }
         }
     }
 
@@ -225,33 +242,34 @@ export class SpineScenePreviewer extends Animation {
         spine.markForUpdateRenderData();
         if (spine.paused) return;
         dt *= spine.timeScale * 1;
-        // 
-        if (spine._cacheMode !== sp.Skeleton.AnimationCacheMode.REALTIME) {
-            if (spine._isAniComplete) {
-                if (spine._animationQueue.length === 0 && !spine._headAniInfo) {
-                    const frameCache = spine._animCache;
-                    if (frameCache && frameCache.isInvalid()) {
-                        frameCache.updateToFrame(0);
-                        const frames = frameCache.frames;
-                        spine._curFrame = frames[frames.length - 1];
-                    }
-                    return;
-                }
-                if (!spine._headAniInfo) {
-                    spine._headAniInfo = spine._animationQueue.shift()!;
-                }
-                spine._accTime += dt;
-                if (spine._accTime > spine._headAniInfo?.delay) {
-                    const aniInfo = spine._headAniInfo;
-                    spine._headAniInfo = null;
-                    spine.setAnimation(0, aniInfo?.animationName, aniInfo?.loop);
-                }
-                return;
-            }
-            spine._updateCache(dt);
-        } else {
-            spine._instance! && spine._instance!.updateAnimation(dt);
-        }
+        // // 
+        // if (spine._cacheMode !== sp.Skeleton.AnimationCacheMode.REALTIME) {
+        //     if (spine._isAniComplete) {
+        //         if (spine._animationQueue.length === 0 && !spine._headAniInfo) {
+        //             const frameCache = spine._animCache;
+        //             if (frameCache && frameCache.isInvalid()) {
+        //                 frameCache.updateToFrame(0);
+        //                 const frames = frameCache.frames;
+        //                 spine._curFrame = frames[frames.length - 1];
+        //             }
+        //             return;
+        //         }
+        //         if (!spine._headAniInfo) {
+        //             spine._headAniInfo = spine._animationQueue.shift()!;
+        //         }
+        //         spine._accTime += dt;
+        //         if (spine._accTime > spine._headAniInfo?.delay) {
+        //             const aniInfo = spine._headAniInfo;
+        //             spine._headAniInfo = null;
+        //             spine.setAnimation(0, aniInfo?.animationName, aniInfo?.loop);
+        //         }
+        //         return;
+        //     }
+        //     spine._updateCache(dt);
+        // } else {
+        //     spine._instance! && spine._instance!.updateAnimation(dt);
+        // }
+        spine._instance! && spine._instance!.updateAnimation(dt);
     }
 
     // --------- Utils -----------

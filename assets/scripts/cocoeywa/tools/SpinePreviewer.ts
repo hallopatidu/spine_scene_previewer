@@ -207,32 +207,33 @@ export class SpinePreviewer extends Animation {
         if (spine.paused) return;
         dt *= spine.timeScale * 1;
         // 
-        if (spine._cacheMode !== sp.Skeleton.AnimationCacheMode.REALTIME) {
-            if (spine._isAniComplete) {
-                if (spine._animationQueue.length === 0 && !spine._headAniInfo) {
-                    const frameCache = spine._animCache;
-                    if (frameCache && frameCache.isInvalid()) {
-                        frameCache.updateToFrame(0);
-                        const frames = frameCache.frames;
-                        spine._curFrame = frames[frames.length - 1];
-                    }
-                    return;
-                }
-                if (!spine._headAniInfo) {
-                    spine._headAniInfo = spine._animationQueue.shift()!;
-                }
-                spine._accTime += dt;
-                if (spine._accTime > spine._headAniInfo?.delay) {
-                    const aniInfo = spine._headAniInfo;
-                    spine._headAniInfo = null;
-                    spine.setAnimation(0, aniInfo?.animationName, aniInfo?.loop);
-                }
-                return;
-            }
-            spine._updateCache(dt);
-        } else {
-            spine._instance! && spine._instance!.updateAnimation(dt);
-        }
+        // if (spine._cacheMode !== sp.Skeleton.AnimationCacheMode.REALTIME) {
+        //     if (spine._isAniComplete) {
+        //         if (spine._animationQueue.length === 0 && !spine._headAniInfo) {
+        //             const frameCache = spine._animCache;
+        //             if (frameCache && frameCache.isInvalid()) {
+        //                 frameCache.updateToFrame(0);
+        //                 const frames = frameCache.frames;
+        //                 spine._curFrame = frames[frames.length - 1];
+        //             }
+        //             return;
+        //         }
+        //         if (!spine._headAniInfo) {
+        //             spine._headAniInfo = spine._animationQueue.shift()!;
+        //         }
+        //         spine._accTime += dt;
+        //         if (spine._accTime > spine._headAniInfo?.delay) {
+        //             const aniInfo = spine._headAniInfo;
+        //             spine._headAniInfo = null;
+        //             spine.setAnimation(0, aniInfo?.animationName, aniInfo?.loop);
+        //         }
+        //         return;
+        //     }
+        //     spine._updateCache(dt);
+        // } else {
+        //     spine._instance! && spine._instance!.updateAnimation(dt);
+        // }
+        spine._instance! && spine._instance!.updateAnimation(dt);
     }
 
     // ------------- Private ------------
