@@ -4,6 +4,8 @@
 
 A single component designed to preview Spine Animations directly within the Editor environment without the need for Runtime execution.
 
+Support: 
+Cocos Creator version 3.8.3
 ---
 
 ## How to Use
