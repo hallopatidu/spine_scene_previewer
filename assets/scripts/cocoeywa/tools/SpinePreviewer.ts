@@ -173,7 +173,8 @@ export class SpinePreviewer extends Animation {
     private _isRunning: boolean = false;
     private _previewTrackIndex: number = 0;
     private _seekTime: number = 0;
-    private _spineAnimation:string = undefined;
+    private _skeletonDataUUID:string = undefined;
+    private _spineAnimation:string = undefined;    
     
     onLoad(): void {
         if(!EDITOR){
@@ -206,33 +207,7 @@ export class SpinePreviewer extends Animation {
         spine.markForUpdateRenderData();
         if (spine.paused) return;
         dt *= spine.timeScale * 1;
-        // 
-        if (spine._cacheMode !== sp.Skeleton.AnimationCacheMode.REALTIME) {
-            if (spine._isAniComplete) {
-                if (spine._animationQueue.length === 0 && !spine._headAniInfo) {
-                    const frameCache = spine._animCache;
-                    if (frameCache && frameCache.isInvalid()) {
-                        frameCache.updateToFrame(0);
-                        const frames = frameCache.frames;
-                        spine._curFrame = frames[frames.length - 1];
-                    }
-                    return;
-                }
-                if (!spine._headAniInfo) {
-                    spine._headAniInfo = spine._animationQueue.shift()!;
-                }
-                spine._accTime += dt;
-                if (spine._accTime > spine._headAniInfo?.delay) {
-                    const aniInfo = spine._headAniInfo;
-                    spine._headAniInfo = null;
-                    spine.setAnimation(0, aniInfo?.animationName, aniInfo?.loop);
-                }
-                return;
-            }
-            spine._updateCache(dt);
-        } else {
-            spine._instance! && spine._instance!.updateAnimation(dt);
-        }
+        spine._instance! && spine._instance!.updateAnimation(dt);
     }
 
     // ------------- Private ------------
@@ -242,7 +217,7 @@ export class SpinePreviewer extends Animation {
      * @param spine 
      */
     private updateSpineInfo(spine:sp.Skeleton){
-        if (spine && spine.skeletonData) {       
+        if (spine && spine.skeletonData) {
             this._spineAnimation = this.spine ? this.spine.animation : undefined;     
             const animation:sp.spine.Animation =  spine.findAnimation(this._spineAnimation)
             if(animation){
@@ -260,8 +235,8 @@ export class SpinePreviewer extends Animation {
      * 
      * @returns 
      */
-    private hasChanged():boolean{
-        return this._spineAnimation !== this.spine?.animation
+    private hasChanged():boolean{        
+        return  this._spineAnimation !== this.spine?.animation
     }
 
     /**
@@ -306,7 +281,9 @@ export class SpinePreviewer extends Animation {
      */
     private async referenceAnimationAsset(targetAssetUuid: string): Promise<void> {
         if (!EDITOR) return;
-
+        if(this.defaultClip){
+            this.defaultClip.nativeUrl
+        }
         try {
             // 1. Lấy thông tin đường dẫn từ UUID 
             // (Retrieve the file path using the source UUID.)
