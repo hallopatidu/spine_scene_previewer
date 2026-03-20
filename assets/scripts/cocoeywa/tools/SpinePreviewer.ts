@@ -130,7 +130,7 @@ export class SpinePreviewer extends Animation {
 
     @property({
         visible() {
-            return this._spine;
+            return !!this._spine;
         }
     })
     public get playInEditor(): boolean {
