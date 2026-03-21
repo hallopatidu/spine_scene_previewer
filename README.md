@@ -14,6 +14,8 @@ To use this component, simply follow these steps:
 * **Step 2:** In the Inspector panel, toggle the **Play In Editor** checkbox.
 * **Step 3:** Observe the animation playing directly on the Editor screen.
 
+*Note:* Please ensure the Animation Panel is open before using Play In Editor (required in some versions).
+
 ![Play In Editor](./settings/auto_play.gif)
 
 
