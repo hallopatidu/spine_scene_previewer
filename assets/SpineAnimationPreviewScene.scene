@@ -318,7 +318,7 @@
     "_id": "8djojC/yRCuqBr3iJ+HmzM"
   },
   {
-    "__type__": "e18f318d/NOoqVy2Kem5nWy",
+    "__type__": "09d6duaQkpC8rHo5l87633S",
     "_name": "",
     "_objFlags": 0,
     "__editorExtras__": {},
@@ -327,6 +327,7 @@
     },
     "_enabled": true,
     "__prefab": null,
+    "playOnLoad": false,
     "_clips": [
       {
         "__uuid__": "1416a5fd-20c7-4d29-9b0f-a872c172955e",
