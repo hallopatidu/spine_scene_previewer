@@ -173,7 +173,7 @@
     "_priority": 0,
     "_fov": 45,
     "_fovAxis": 0,
-    "_orthoHeight": 368.714676390155,
+    "_orthoHeight": 360,
     "_near": 0,
     "_far": 1000,
     "_color": {
@@ -230,7 +230,7 @@
     "_lpos": {
       "__type__": "cc.Vec3",
       "x": 0,
-      "y": -156.699,
+      "y": -195.273,
       "z": 0
     },
     "_lrot": {
@@ -254,7 +254,7 @@
       "y": 0,
       "z": 0
     },
-    "_id": "dc5RpkC79BIL8EZfh4hSXJ"
+    "_id": "f2zY7MCGVPoYKXAgFGHIzq"
   },
   {
     "__type__": "cc.UITransform",
@@ -276,7 +276,7 @@
       "x": 0.5194699342280161,
       "y": 0.011723726117807736
     },
-    "_id": "0dhylWEY1OTqmU+vxITfDh"
+    "_id": "1eOBh6mjdLfYGib0KfrVSi"
   },
   {
     "__type__": "sp.Skeleton",
@@ -303,8 +303,8 @@
       "__expectedType__": "sp.SkeletonData"
     },
     "defaultSkin": "default",
-    "defaultAnimation": "",
-    "_premultipliedAlpha": false,
+    "defaultAnimation": "jump",
+    "_premultipliedAlpha": true,
     "_timeScale": 1,
     "_preCacheMode": 0,
     "_cacheMode": 0,
@@ -315,10 +315,10 @@
     "_debugSlots": false,
     "_enableBatch": false,
     "loop": true,
-    "_id": "bdfhNV6hdHGqTxwtGX2qMo"
+    "_id": "8djojC/yRCuqBr3iJ+HmzM"
   },
   {
-    "__type__": "09d6duaQkpC8rHo5l87633S",
+    "__type__": "e18f318d/NOoqVy2Kem5nWy",
     "_name": "",
     "_objFlags": 0,
     "__editorExtras__": {},
@@ -327,18 +327,18 @@
     },
     "_enabled": true,
     "__prefab": null,
-    "playOnLoad": false,
     "_clips": [
       {
-        "__uuid__": "078ff3c3-5daf-456b-bc48-7fed57ae3988",
+        "__uuid__": "723f4b38-ad6b-401e-95d6-447c8dfa66b3",
         "__expectedType__": "cc.AnimationClip"
       }
     ],
     "_defaultClip": {
-      "__uuid__": "078ff3c3-5daf-456b-bc48-7fed57ae3988",
+      "__uuid__": "723f4b38-ad6b-401e-95d6-447c8dfa66b3",
       "__expectedType__": "cc.AnimationClip"
     },
-    "_id": "43591R62tBeJqfh73A/hDC"
+    "duration": 0.666700005531311,
+    "_id": "21P25vvs1GbKwKvmKMaF5d"
   },
   {
     "__type__": "cc.UITransform",

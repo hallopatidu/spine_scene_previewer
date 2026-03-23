@@ -51,54 +51,26 @@ export class SpinePreviewer extends Animation {
         return false;
     }
 
-    @property({ 
-        type: sp.Skeleton,
-        visible:false,        
-    })
-    public get spine(): sp.Skeleton {
-        return this._spine;
-    }
-    public set spine(value: sp.Skeleton) {
-        if (this._spine === value) return;
-        this._spine = value;
-        if (!SpinePreviewer.isInAnimationMode) {
-            if (value && value.skeletonData) {                
-                const skeletonData: sp.SkeletonData = value.skeletonData;
-                const uuid: string = skeletonData.uuid;
-                this.referenceAnimationAsset(uuid);
-                
-            } else if (value && !value.skeletonData) {
-                error('Reference to Spine Component fail. You need SkeletonData Asset for this Spine Component !')
-            } else {
-                this.clips.forEach((clip: AnimationClip) => {
-                    this.removeClip(clip, true);
-                })
-                this.defaultClip = null;
-            }
+    private _spine: sp.Skeleton;
+    private _playInEditor: boolean = false;
+    private _seekTime: number = 0;
+
+    private _spineAnimation:string = undefined;
+    private _skeletonDataName:string = undefined;
+    
+    private _previewTrackIndex: number = 0;
+
+    private _previewUUID:string = null;
+    private get previewUUID():string{
+        if(!this._previewUUID){
+            this._previewUUID = `${this.node?.uuid}::${this.uuid}`
         }
+        return this._previewUUID
     }
 
-    @property({
-        slide: true,        
-        range: [0, 100],
-        visible() {
-            return !this.playInEditor;
-        }
-    })    
-    public get seekTime(): number {
-        return this._seekTime;
+    private get isInPreviewFocus():boolean{
+        return SpinePreviewer.__runningPreviewerUuid == this.previewUUID && SpinePreviewer.isInAnimationMode;
     }
-    public set seekTime(value: number) {
-        this._seekTime = value;
-        this.seekTo(value);
-    }
-
-    @property({
-        readonly:true
-    })
-    duration:number = 0
-
-    // ---------- Hide Animation Component's properties in Editor ------------- 
 
     @property({
         type: AnimationClip,
@@ -121,139 +93,178 @@ export class SpinePreviewer extends Animation {
         visible:false
     })
     get clips (): (AnimationClip | null)[] {
-        return super.clips;
+        return this._clips;
     }
 
     set clips (value:(AnimationClip | null)[]) {        
-        super.clips = value;
+        this._clips = value;
+    }
+
+    @property({ 
+        type: sp.Skeleton,
+        visible:false,        
+    })
+    public get spine(): sp.Skeleton {
+        return this._spine;
+    }
+    public set spine(value: sp.Skeleton) {
+        this._spine = value;
     }
 
     @property({
+        slide: true,        
+        range: [0, 100]
+    })    
+    public get seekTime(): number {
+        return this._seekTime;
+    }
+    public set seekTime(value: number) {
+        this._seekTime = value;
+        this.seekTo(value);
+    }
+
+    @property({
+        readonly:true
+    })
+    duration:number = 0;
+
+    @property({
+        tooltip: "Vui lòng mở Animation Panel trước khi sử dụng chức năng này.\n Please open the Animation Panel before using this feature.",
         visible() {
             return !!this._spine;
         }
     })
     public get playInEditor(): boolean {
         if (EDITOR) {
-            this._isRunning = SpinePreviewer.isInAnimationMode;
+            this._playInEditor = SpinePreviewer.isInAnimationMode;
+            CCClass.Attr.setClassAttr(this, 'seekTime', 'readonly', this._playInEditor); 
         }
-        return this._isRunning;
+        return this._playInEditor;
     }
 
-    public set playInEditor(value: boolean) {
+    public set playInEditor(value: boolean) {     
+        this._playInEditor = value;   
         if (EDITOR) {
             if (value) {
                 this.playAnimation();
-                this._isRunning = value;
             } else if (!value && this.isInPreviewFocus) {
                 this.stopAnimation();
             } else {
                 return;
-            }
-        }else{
-            this._isRunning = value;
+            }            
         }
+        
     }
-
-    @property({serializable:true})
-    private _spine: sp.Skeleton = null;
-
-    private _previewUUID:string = null;
-    private get previewUUID():string{
-        if(!this._previewUUID){
-            this._previewUUID = `${this.node?.uuid}::${this.uuid}`
-        }
-        return this._previewUUID
-    }
-
-    private get isInPreviewFocus():boolean{
-        return SpinePreviewer.__runningPreviewerUuid == this.previewUUID && SpinePreviewer.isInAnimationMode;
-    }
-
-    private _isRunning: boolean = false;
-    private _previewTrackIndex: number = 0;
-    private _seekTime: number = 0;
-    private _spineAnimation:string = undefined;
     
     onLoad(): void {
-        if(!EDITOR){
-            this.destroy();
-        }
-        super.onLoad();
+        super.onLoad && super.onLoad();
         if(!this.spine){
             this.spine = this.getComponent(sp.Skeleton);
         }
+
     }
 
     update(deltaTime: number) {
-        if (this.playInEditor && this.isInPreviewFocus) {
+        if (this.playInEditor) {
             this.updateSpineAnimation(deltaTime);
             // Nếu muốn tween chạy trên scene thì mở đoạn sau. Lưu ý: các component class sử dụng tween cần có @executeInEditMode(true)
             // TweenSystem.instance.ActionManager.update(deltaTime);    
-            Editor.Message.request('scene', 'set-edit-time', deltaTime);            
-        }else if(this.hasChanged()){
+            Editor.Message.request('scene', 'set-edit-time', deltaTime);
+        }else if(this.onSpineChanged()){
             this.updateSpineInfo(this.spine);
         }
     }
-
-    /**
-     * Update skeleton animation.
-     * @param dt delta time.
-     */
-    protected updateSpineAnimation(dt: number): void {
-        if (!this.spine) return;
-        const spine: RedefinedSkeletonType = this.spine as RedefinedSkeletonType;
-        spine.markForUpdateRenderData();
-        if (spine.paused) return;
-        dt *= spine.timeScale * 1;
-        // 
-        // if (spine._cacheMode !== sp.Skeleton.AnimationCacheMode.REALTIME) {
-        //     if (spine._isAniComplete) {
-        //         if (spine._animationQueue.length === 0 && !spine._headAniInfo) {
-        //             const frameCache = spine._animCache;
-        //             if (frameCache && frameCache.isInvalid()) {
-        //                 frameCache.updateToFrame(0);
-        //                 const frames = frameCache.frames;
-        //                 spine._curFrame = frames[frames.length - 1];
-        //             }
-        //             return;
-        //         }
-        //         if (!spine._headAniInfo) {
-        //             spine._headAniInfo = spine._animationQueue.shift()!;
-        //         }
-        //         spine._accTime += dt;
-        //         if (spine._accTime > spine._headAniInfo?.delay) {
-        //             const aniInfo = spine._headAniInfo;
-        //             spine._headAniInfo = null;
-        //             spine.setAnimation(0, aniInfo?.animationName, aniInfo?.loop);
-        //         }
-        //         return;
-        //     }
-        //     spine._updateCache(dt);
-        // } else {
-        //     spine._instance! && spine._instance!.updateAnimation(dt);
-        // }
-        spine._instance! && spine._instance!.updateAnimation(dt);
-    }
-
+    
     // ------------- Private ------------
 
     /**
      * 
+     * @param targetAssetUuid 
+     * @returns 
+     */
+    private async referenceAnimationAsset(targetAssetUuid: string): Promise<void> {
+        if (!EDITOR) return;
+        try {
+            // 1. Lấy thông tin đường dẫn từ UUID 
+            // (Retrieve the file path using the source UUID.)
+            const url: string = await Editor.Message.request('asset-db', "query-url", targetAssetUuid);
+            if (!url) {
+                warn(`[ReferenceAnim] Không tìm thấy URL cho UUID: ${targetAssetUuid}`);
+                return;
+            }
+            
+            const relativePath: string = this.getPathWithoutFileName(url);
+            const animAssetName: string = this.getFilenameWithoutExtension(url);
+            const animAssetUrl: string = `${relativePath}${animAssetName}.anim`;
+
+            let assetInfo: AssetInfo = await Editor.Message.request('asset-db', 'query-asset-info', animAssetUrl);
+            // 2. Tạo asset mới nếu chưa tồn tại 
+            // (Create a new .anim asset if it doesn't already exist.)
+            let isNewAsset: boolean = false;
+            if (!assetInfo) {
+                assetInfo = await Editor.Message.request('asset-db', 'new-asset', {  
+                    handler: "animation-clip",
+                    target: animAssetUrl,
+                    template: DefaulAnimTemplate,
+                    overwrite: true
+                });
+                //             
+                if (assetInfo) {
+                    await Editor.Message.request('asset-db', 'refresh-asset', assetInfo.uuid);
+                    isNewAsset = true;
+                    // log(`[ReferenceAnim] Đã tạo mới Animation Clip: ${animAssetUrl}`);
+                } else {
+                    throw new Error(`Failed to create asset at: ${animAssetUrl}`);
+                }
+            }
+            
+            // 3. Load và gán Animation Clip 
+            // (Load and assign the Animation Clip to the component.)
+            const animationClip: AnimationClip = await this.loadAnimationClipByUuid(assetInfo.uuid);
+            if (animationClip) {
+                // Thêm clip vào animation.
+                this.addClip(animationClip, assetInfo.name);
+                this.defaultClip = animationClip;
+
+                // 4. Nếu file .anim vừa được tạo thì reload nhẹ cái Cocos Creator Editor. 
+                // (Perform a soft-reload of the Editor if a new asset was generated.)
+                if (isNewAsset) {
+                    await Editor.Message.request('scene', 'soft-reload');
+                }                
+                
+            }
+
+        }catch(err){
+            error("[SpinePreviewer] Error during Animation Asset referencing:", err);
+        }
+    }
+
+
+    
+    /**
+     * 
      * @param spine 
      */
-    private updateSpineInfo(spine:sp.Skeleton){
+    private async updateSpineInfo(spine:sp.Skeleton){
+        if(!EDITOR) return;
         if (spine && spine.skeletonData) {       
-            this._spineAnimation = this.spine ? this.spine.animation : undefined;     
+            
+            this._spineAnimation = spine.animation;     
             const animation:sp.spine.Animation =  spine.findAnimation(this._spineAnimation)
             if(animation){
                 const duration:number = animation.duration;
                 CCClass.Attr.setClassAttr(this, 'seekTime', 'range', [0, duration]);
                 CCClass.Attr.setClassAttr(this, 'seekTime', 'min', 0);
                 CCClass.Attr.setClassAttr(this, 'seekTime', 'max', duration);
-                CCClass.Attr.setClassAttr(this, 'seekTime', 'step', duration/1000); 
+                CCClass.Attr.setClassAttr(this, 'seekTime', 'step', duration/1000);
                 this.duration = duration;           
             }
+
+            if(spine.skeletonData && this._skeletonDataName !== spine.skeletonData.name){
+                await this.referenceAnimationAsset(spine.skeletonData.uuid);
+                this._skeletonDataName = spine.skeletonData.name;
+            }
+            
         }
     }
 
@@ -261,8 +272,8 @@ export class SpinePreviewer extends Animation {
      * 
      * @returns 
      */
-    private hasChanged():boolean{
-        return this._spineAnimation !== this.spine?.animation
+    private onSpineChanged():boolean{        
+        return this._spineAnimation !== this.spine?.animation || this._skeletonDataName !== this.spine?.skeletonData.name;
     }
 
     /**
@@ -294,85 +305,15 @@ export class SpinePreviewer extends Animation {
         }
     }
 
-    
-    /**
-     * Tự động tham chiếu hoặc tạo mới Animation Clip dựa trên UUID của tài nguyên mục tiêu.\
-     * (Automatically references or creates a new Animation Clip based on the target asset's UUID.)
-     * * Process:
-     * 1. Retrieve the file path using the source UUID.
-     * 2. Create a new .anim asset if it doesn't already exist.
-     * 3. Load and assign the Animation Clip to the component.
-     * 4. Perform a soft-reload of the Editor if a new asset was generated.
-     * @param targetAssetUuid UUID của tài nguyên gốc để xác định đường dẫn. (The UUID of the source asset to determine the path.)
-     */
-    private async referenceAnimationAsset(targetAssetUuid: string): Promise<void> {
-        if (!EDITOR) return;
-
-        try {
-            // 1. Lấy thông tin đường dẫn từ UUID 
-            // (Retrieve the file path using the source UUID.)
-            const url: string = await Editor.Message.request('asset-db', "query-url", targetAssetUuid);
-            if (!url) {
-                warn(`[ReferenceAnim] Không tìm thấy URL cho UUID: ${targetAssetUuid}`);
-                return;
-            }
-
-            const relativePath: string = this.getPathWithoutFileName(url);
-            const animAssetName: string = this.getFilenameWithoutExtension(url);
-            const animAssetUrl: string = `${relativePath}${animAssetName}.anim`;
-
-            let isNewAsset: boolean = false;
-            let assetInfo: AssetInfo = await Editor.Message.request('asset-db', 'query-asset-info', animAssetUrl);
-
-            // 2. Tạo asset mới nếu chưa tồn tại 
-            // (Create a new .anim asset if it doesn't already exist.)
-            if (!assetInfo) {
-                assetInfo = await Editor.Message.request('asset-db', 'new-asset', {  
-                    handler: "animation-clip",
-                    target: animAssetUrl,
-                    template: DefaulAnimTemplate,
-                    overwrite: true
-                });
-                // const defaultData = JSON.stringify(DefaultAnimationClipData);
-                // assetInfo = await Editor.Message.request('asset-db', 'create-asset', animAssetUrl, defaultData);                
-                if (assetInfo) {
-                    await Editor.Message.request('asset-db', 'refresh-asset', assetInfo.uuid);
-                    isNewAsset = true;
-                    // log(`[ReferenceAnim] Đã tạo mới Animation Clip: ${animAssetUrl}`);
-                } else {
-                    throw new Error(`Failed to create asset at: ${animAssetUrl}`);
-                }
-            }
-
-            // 3. Load và gán Animation Clip 
-            // (Load and assign the Animation Clip to the component.)
-            const animationClip: AnimationClip = await this.loadAnimationClipByUuid(assetInfo.uuid);
-            if (animationClip) {
-                // Thêm clip vào animation.
-                this.addClip(animationClip, assetInfo.name);
-                this.defaultClip = animationClip;
-
-                // 4. Nếu file .anim vừa được tạo thì reload nhẹ cái Cocos Creator Editor. 
-                // (Perform a soft-reload of the Editor if a new asset was generated.)
-                if (isNewAsset) {
-                    await Editor.Message.request('scene', 'soft-reload');
-                }                
-                
-            }
-
-        } catch (error) {
-            error("[SpinePreviewer] Error during Animation Asset referencing:", error);
-        }
-    }
-
 
     private async playAnimation() {
         if (EDITOR) {
-            const currentClip: AnimationClip = this.clips[0];
+            const currentClip: AnimationClip = this.defaultClip;
             const selectedNodeUuid: string = this.node.uuid
-            SpinePreviewer.__runningPreviewerUuid = this.previewUUID;
-            await Editor.Message.request('scene', 'record-animation', selectedNodeUuid, true, currentClip.uuid);            
-            await Editor.Message.request('scene', 'query-node', selectedNodeUuid);
+            SpinePreviewer.__runningPreviewerUuid = this.previewUUID;           
+            await Editor.Message.request('scene', 'query-node', selectedNodeUuid);   
+            const result = await Editor.Message.request('scene', 'record-animation', selectedNodeUuid, true, currentClip.uuid);  
+            
         }
     }
 
@@ -381,7 +322,7 @@ export class SpinePreviewer extends Animation {
             const checkMode: string = Editor.EditMode.getMode();                
             if (checkMode == EditorMode.Animation) {
                 // 
-                const currentClip: AnimationClip = this.clips[0];
+                const currentClip: AnimationClip = this.defaultClip;
                 if (currentClip) {
                     Editor.Message.request('scene', 'change-clip-state', 'stop', currentClip.uuid);
                 }
@@ -391,11 +332,28 @@ export class SpinePreviewer extends Animation {
         }
     }
     
-    private seekTo(time:number){
-        if(EDITOR){            
+
+    /**
+     * 
+     * @param time 
+     */
+    private async seekTo(time:number){
+        if(EDITOR){                        
             this._previewTrackIndex = this.spine.setAnimation(this._previewTrackIndex, this.spine.animation, this.spine.loop).trackIndex;
             this.updateSpineAnimation(time);
         }
+    }
+
+    /**
+     * Update skeleton animation.
+     * @param dt delta time.
+     */
+    protected updateSpineAnimation(dt: number): void {
+        if (!this.spine) return;
+        const spine: RedefinedSkeletonType = this.spine as RedefinedSkeletonType;
+        spine.markForUpdateRenderData();
+        dt *= spine.timeScale * 1;
+        spine._instance! && spine._instance!.updateAnimation(dt);
     }
 
     // --------- Utils -----------
