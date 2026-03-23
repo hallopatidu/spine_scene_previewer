@@ -208,8 +208,7 @@ export class SpinePreviewer extends Animation {
                     template: DefaulAnimTemplate,
                     overwrite: true
                 });
-                // const defaultData = JSON.stringify(DefaultAnimationClipData);
-                // assetInfo = await Editor.Message.request('asset-db', 'create-asset', animAssetUrl, defaultData);                
+                //              
                 if (assetInfo) {
                     await Editor.Message.request('asset-db', 'refresh-asset', assetInfo.uuid);
                     isNewAsset = true;
